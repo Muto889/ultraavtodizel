@@ -382,11 +382,22 @@ function setSecurity(qIdx,hash){localStorage.setItem(SECURITY_KEY,JSON.stringify
 async function loadSettingsCloud(){
   try{
     const data=await sbGet("settings");
-    if(!data||data.length===0)return;
-    data.forEach(row=>{
-      if(row.key==="pass")localStorage.setItem(PASS_KEY,row.value);
-      if(row.key==="security")localStorage.setItem(SECURITY_KEY,row.value);
-    });
+    const cloudPass=data&&data.find(r=>r.key==="pass");
+    const cloudSec=data&&data.find(r=>r.key==="security");
+    if(cloudPass){
+      // Bulud şifrəsi var — lokalə kopyala
+      localStorage.setItem(PASS_KEY,cloudPass.value);
+    } else {
+      // Bulud boşdur — əgər lokal şifrə varsa buludа yüklə
+      const localPass=localStorage.getItem(PASS_KEY);
+      if(localPass)await saveSettingCloud("pass",localPass);
+    }
+    if(cloudSec){
+      localStorage.setItem(SECURITY_KEY,cloudSec.value);
+    } else {
+      const localSec=localStorage.getItem(SECURITY_KEY);
+      if(localSec)await saveSettingCloud("security",localSec);
+    }
   }catch(e){console.warn("Settings yukle xeta:",e);}
 }
 async function saveSettingCloud(key,value){
