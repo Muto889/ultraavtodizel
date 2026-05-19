@@ -378,6 +378,24 @@ async function saveWorkersCloud(names){
 function getSecurity(){try{return JSON.parse(localStorage.getItem(SECURITY_KEY))||null;}catch{return null;}}
 function setSecurity(qIdx,hash){localStorage.setItem(SECURITY_KEY,JSON.stringify({qIdx,hash}));}
 
+// ── Supabase Settings — şifrə və gizli sual buludda saxlanır ──
+async function loadSettingsCloud(){
+  try{
+    const data=await sbGet("settings");
+    if(!data||data.length===0)return;
+    data.forEach(row=>{
+      if(row.key==="pass")localStorage.setItem(PASS_KEY,row.value);
+      if(row.key==="security")localStorage.setItem(SECURITY_KEY,row.value);
+    });
+  }catch(e){console.warn("Settings yukle xeta:",e);}
+}
+async function saveSettingCloud(key,value){
+  try{await sbUpsert("settings",[{key,value,updated_at:new Date().toISOString()}]);}
+  catch(e){console.warn("Setting saxla xeta:",e);}
+}
+async function setPassCloud(p){setPass(p);await saveSettingCloud("pass",p);}
+async function setSecurityCloud(qIdx,hash){setSecurity(qIdx,hash);await saveSettingCloud("security",JSON.stringify({qIdx,hash}));}
+
 // Gizli suallar siyahısı
 const SECURITY_QUESTIONS=[
   "Pasport nömrəniz nədir?",
@@ -1312,10 +1330,14 @@ function LoginScreen({onLogin}){
   // Worker
   const[workerName,setWorkerName]=useState("");
   const[workerList,setWorkerList]=useState(()=>loadWorkers());
-  useEffect(()=>{loadWorkersCloud().then(names=>setWorkerList(names));},[]);
+  const[settingsLoaded,setSettingsLoaded]=useState(false);
+  useEffect(()=>{
+    loadSettingsCloud().then(()=>setSettingsLoaded(true)).catch(()=>setSettingsLoaded(true));
+    loadWorkersCloud().then(names=>setWorkerList(names));
+  },[]);
 
-  const stored=getPass();
-  const security=getSecurity();
+  const stored=settingsLoaded?getPass():undefined;
+  const security=settingsLoaded?getSecurity():undefined;
 
   const[cryptoWarn,setCryptoWarn]=useState(false);
   useEffect(()=>{migratePassIfNeeded();},[]);
@@ -1339,16 +1361,16 @@ function LoginScreen({onLogin}){
     if(newPw!==cnf)return setErr("Şifrələr bir-birinə uyğun deyil.");
     setLoading(true);
     const hash=await hashPw(newPw);
-    setPass(hash);
+    await setPassCloud(hash);
     setLoading(false);
-    setSecStep(true); // şifrə quruldu → indi gizli sual
+    setSecStep(true);
   };
 
   const doSetSecurity=async()=>{
     if(!secAns.trim())return setErr("Cavab daxil edin!");
     setLoading(true);
     const h=await hashPw(secAns.trim().toLowerCase());
-    setSecurity(secQIdx,h);
+    await setSecurityCloud(secQIdx,h);
     setLoading(false);
     onLogin({role:"owner",name:"Sahibkar"});
   };
@@ -1369,7 +1391,7 @@ function LoginScreen({onLogin}){
     if(forgotNew!==forgotCnf)return setErr("Şifrələr uyğun deyil!");
     setLoading(true);
     const h=await hashPw(forgotNew);
-    setPass(h);
+    await setPassCloud(h);
     setLoading(false);
     setForgot(false);setForgotStep(1);setForgotAns("");setForgotNew("");setForgotCnf("");
     setErr("✅ Şifrə uğurla dəyişdirildi!");
@@ -1383,6 +1405,16 @@ function LoginScreen({onLogin}){
   // Stil köməkçisi
   const inputStyle={width:"100%",background:"#fff",border:"1.5px solid #c8d4e0",borderRadius:8,padding:"11px 13px",color:"#1e293b",fontSize:14,outline:"none",fontFamily:"'Inter',sans-serif"};
   const lbl={fontSize:13,fontWeight:800,color:"#1e3a5f",letterSpacing:0.5,textTransform:"uppercase",marginBottom:7,display:"block",fontFamily:FB};
+
+  if(!settingsLoaded) return(
+    <div style={{minHeight:"100vh",background:"#f0f4f8",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center",color:"#475569"}}>
+        <div style={{width:48,height:48,border:"4px solid #e2e8f0",borderTopColor:"#dc2626",borderRadius:"50%",margin:"0 auto 14px",animation:"spin 0.8s linear infinite"}}/>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{fontSize:14,fontWeight:600}}>Yüklənir...</div>
+      </div>
+    </div>
+  );
 
   return(
     <div style={{minHeight:"100vh",background:"#f0f4f8",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -1989,7 +2021,7 @@ function App({onLogout, user}){
     if(newPw1.length<4)return setPwErr("Şifrə ən az 4 simvol olmalıdır!");
     if(newPw1!==newPw2)return setPwErr("Şifrələr uyğun deyil!");
     const hash=await hashPw(newPw1);
-    setPass(hash);
+    await setPassCloud(hash);
     setChangePwOpen(false);setOldPw("");setNewPw1("");setNewPw2("");setPwErr("");
     showToast('Şifrə uğurla dəyişdirildi','success');
   };
