@@ -353,6 +353,27 @@ function loadTrash(){try{const d=localStorage.getItem(TRASH_KEY);return d?JSON.p
 function saveTrash(d){try{localStorage.setItem(TRASH_KEY,JSON.stringify(d));}catch(e){}}
 function loadWorkers(){try{const d=localStorage.getItem(WORKERS_KEY);return d?JSON.parse(d):[]}catch{return[]}}
 function saveWorkers(d){try{localStorage.setItem(WORKERS_KEY,JSON.stringify(d));}catch(e){}}
+// Supabase-dən ustaları yüklə
+async function loadWorkersCloud(){
+  try{
+    const data=await sbGet("workers");
+    const names=(data||[]).map(w=>w.name);
+    if(names.length>0){localStorage.setItem(WORKERS_KEY,JSON.stringify(names));}
+    return names;
+  }catch(e){console.warn("Workers load xəta:",e);return loadWorkers();}
+}
+// Supabase-ə ustaları saxla
+async function saveWorkersCloud(names){
+  try{
+    // Hamısını sil sonra yenidən əlavə et
+    await fetch(`${SUPABASE_URL}/rest/v1/workers?id=neq.__none__`,{method:"DELETE",headers:SB_HDR});
+    if(names.length>0){
+      const rows=names.map(n=>({id:n.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now(),name:n}));
+      await sbUpsert("workers",rows);
+    }
+    localStorage.setItem(WORKERS_KEY,JSON.stringify(names));
+  }catch(e){console.warn("Workers save xəta:",e);saveWorkers(names);}
+}
 // Şifrə sıfırlama — gizli sual
 function getSecurity(){try{return JSON.parse(localStorage.getItem(SECURITY_KEY))||null;}catch{return null;}}
 function setSecurity(qIdx,hash){localStorage.setItem(SECURITY_KEY,JSON.stringify({qIdx,hash}));}
@@ -848,14 +869,18 @@ function WorkersModal({onClose}){
   const[name,setName]=useState("");
   const[err,setErr]=useState("");
 
+  useEffect(()=>{
+    loadWorkersCloud().then(names=>{if(names.length>0)setWorkers(names);});
+  },[]);
+
   const add=()=>{
     const n=name.trim();
     if(!n){return setErr("Ad daxil edin!");}
     if(workers.includes(n)){return setErr("Bu ad artıq mövcuddur!");}
     const upd=[...workers,n];
-    setWorkers(upd);saveWorkers(upd);setName("");setErr("");
+    setWorkers(upd);saveWorkersCloud(upd);setName("");setErr("");
   };
-  const remove=n=>{const upd=workers.filter(w=>w!==n);setWorkers(upd);saveWorkers(upd);};
+  const remove=n=>{const upd=workers.filter(w=>w!==n);setWorkers(upd);saveWorkersCloud(upd);};
 
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:16}} onClick={onClose}>
@@ -1286,6 +1311,8 @@ function LoginScreen({onLogin}){
   const[forgotStep,setForgotStep]=useState(1); // 1=sual, 2=yeni şifrə
   // Worker
   const[workerName,setWorkerName]=useState("");
+  const[workerList,setWorkerList]=useState(()=>loadWorkers());
+  useEffect(()=>{loadWorkersCloud().then(names=>setWorkerList(names));},[]);
 
   const stored=getPass();
   const security=getSecurity();
@@ -1506,7 +1533,7 @@ function LoginScreen({onLogin}){
 
                 {/* USTA */}
                 {mode==="worker"&&(()=>{
-                  const workers=loadWorkers();
+                  const workers=workerList;
                   return(
                     <>
                       {workers.length===0?(
